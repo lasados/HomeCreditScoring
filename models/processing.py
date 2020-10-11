@@ -47,6 +47,7 @@ def get_column_types(data: pd.DataFrame,
                          'Nominal' - string (Categorical),
                          'Unknown' - columns that could be both]
     """
+    column_types = dict()
     assert (exclude_col is not None) or (include_col is not None), 'Could set only one param'
 
     if include_col is not None:
@@ -79,3 +80,11 @@ def get_column_types(data: pd.DataFrame,
                 unknown_columns.append(column)
             else:
                 continuous_columns.append(column)
+
+    column_types['Continuous'] = continuous_columns
+    column_types['Binary'] = binary_columns
+    column_types['Nominal'] = nominal_columns
+    column_types['Unknown'] = unknown_columns
+
+    return column_types
+
