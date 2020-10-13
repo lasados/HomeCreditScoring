@@ -1,4 +1,5 @@
 import pandas as pd
+import matplotlib.pyplot as plt
 
 
 def get_table_description(filename: str,
@@ -28,21 +29,21 @@ def get_table_description(filename: str,
     return table_description
 
 
-class ProcessEDA:
+class BinaryClassEDA:
     """
-    Class for Exploratory Data Analysis.
+    Class for Exploratory Data Analysis in Binary Classification task.
 
     Parameters:
     ----------
     data : pd.DataFrame
         DataFrame for analysis. Any format, any columns.
 
+    target_column : str
+        Name of target column in data. Contain 1 and 0.
+
     table_description : pd.DataFrame, default=None
         DataFrame with explanation of each column in main data.
         columns = {"Table", "Row", "Description", "Special"}
-
-    target_column : str, default=None
-        Name of target column in data.
 
     id_column : str, default=None
         Name of column with row id.
@@ -54,9 +55,9 @@ class ProcessEDA:
     ----------
     data : pd.DataFrame, from constructor.
 
-    table_description :  pd.DataFrame, from constructor.
-
     target_column : str, from constructor.
+
+    table_description :  pd.DataFrame, from constructor.
 
     id_column : str, from constructor.
 
@@ -68,18 +69,25 @@ class ProcessEDA:
 
     def __init__(self,
                  data: pd.DataFrame,
+                 target_column: str,
                  table_description=None,
-                 target_column=None,
                  id_column=None,
                  date_column=None):
 
         self.data = data
-        self.table_description = table_description
         self.target_column = target_column
+        assert self._is_valid_target(), 'Target column must contain 1 and 0'
+
+        self.table_description = table_description
         self.id_column = id_column
         self.date_column = date_column
 
         self.column_types = self._get_column_types(exclude_col=[target_column, id_column])
+
+    def _is_valid_target(self):
+        data = self.data
+        target_column = self.target_column
+        return set(data[target_column].unique()) == {1, 0}
 
     def _get_column_types(self,
                           exclude_col=None,
@@ -186,15 +194,136 @@ class ProcessEDA:
                   "\n==========",
                   col_distribution)
 
+    def plot_categorical_dist_by_target(self,
+                                        plot_type=None,
+                                        plot_columns=None,
+                                        positive_name='default',
+                                        negative_name='good'):
+        """
+        Plots distribution bars of selected categorical columns in different target groups.
+        Columns must contain categorical features - ordinal, nominal, binary.
 
-application_train = pd.read_csv('../data/application_train.csv')
-application_train_description = get_table_description(filename='../data/HomeCredit_columns_description.csv',
-                                                      table_name='application_{train|test}.csv')
+        Parameters:
+        ----------
+        plot_type : str, default=None.
+            Key from {'Continuous', 'Binary', 'Nominal', 'Unknown'}.
+            If None -> plot_columns will be used.
+
+        plot_columns : list of strings, default=None.
+            Which columns to plot. If None -> plot_type will be used.
+
+        positive_name : str, default='default'
+            Name of group with positive target.
+
+        negative_name : str, default='good'
+            Name of group with positive target.
+        """
+        assert not ((plot_type is None) and (plot_columns is None)), \
+            'At least one of the parameters must be set'
+
+        assert not ((plot_type is not None) and (plot_columns is not None)), \
+            'Only one of parameters must be set'
+
+        data = self.data
+        column_types = self.column_types
+        target_column = self.target_column
+
+        if plot_type is None:
+            assert type(plot_columns) == list, 'plot_columns must be list of strings'
+        elif plot_columns is None:
+            plot_columns = column_types[plot_type]
+
+        positive_mask = data[target_column] == 1
+        negative_mask = data[target_column] == 0
+
+        n_charts = len(plot_columns)
+        fig = plt.figure(figsize=(16, 5 * n_charts))
+        gs = fig.add_gridspec(n_charts, 2, hspace=0.4)
+
+        # Plot chart for each column
+        for i, column in enumerate(plot_columns):
+
+            # Make labels string
+            if data[column].dtype != object:
+                data[column] = data[column].astype('str')
+
+            positive_cls = data[positive_mask][column]
+            negative_cls = data[negative_mask][column]
+
+            positive_dist = positive_cls.value_counts(normalize=True)
+            negative_dist = negative_cls.value_counts(normalize=True)
+            full_dist = data[column].value_counts(normalize=True)
+
+            # Labels of bins
+            all_labels = full_dist.index
+            positive_labels = positive_dist.index
+            negative_labels = negative_dist.index
+
+            # Plot two charts in case of bad scale.
+            # If frequency of most common a lot more than least one.
+            if max(full_dist) > 10 * min(full_dist):
+                # Find most common names and others.
+                major_labels = [label for label in all_labels if
+                                (full_dist[label] > 0.1 * max(full_dist))]
+                # Labels sorted by values
+                minor_labels = all_labels[len(major_labels):]
+
+                major_values = {'positive': positive_dist[major_labels],
+                                'negative': negative_dist[major_labels]}
+
+                minor_values = {'positive': positive_dist[minor_labels],
+                                'negative': negative_dist[minor_labels]}
+
+                # Create subtitle for two charts
+                ax_title = fig.add_subplot(gs[i, :], frameon=False)
+                ax_title.set_xticks([])
+                ax_title.set_yticks([])
+                ax_title.set_title(column)
+
+                # Create axes
+                ax_maj = fig.add_subplot(gs[i, 0])
+                ax_min = fig.add_subplot(gs[i, 1])
+
+                # Plot most common labels
+                plt.sca(ax_maj)
+                plt.xticks(rotation=30)
+                ax_maj.bar(major_labels, major_values['positive'],
+                           label=positive_name, color='r', width=0.6)
+                ax_maj.bar(major_labels, major_values['negative'],
+                           label=negative_name, color='g', width=0.6, align='edge')
+                plt.legend()
+
+                # Plot least common labels
+                plt.sca(ax_min)
+                plt.xticks(rotation=30)
+                ax_min.bar(minor_labels, minor_values['positive'],
+                           label=positive_name, color='r', width=0.6)
+                ax_min.bar(minor_labels, minor_values['negative'],
+                           label=negative_name, color='g', width=0.6, align='edge')
+                plt.legend()
+
+            # Plot one chart in case of good scale.
+            else:
+                ax = fig.add_subplot(gs[i, :])
+                plt.sca(ax)
+                plt.title(column)
+                ax.bar(positive_labels, positive_dist,
+                       label=positive_name, color='r', width=0.6)
+                ax.bar(negative_labels, negative_dist,
+                       label=negative_name, color='g', width=0.6, align='edge')
+                plt.xticks(rotation=30)
+                plt.legend()
+        plt.show()
 
 
-process_data = ProcessEDA(data=application_train,
-                          table_description=application_train_description,
-                          target_column='TARGET',
-                          id_column='SK_ID_CURR')
+if __name__ == '__main__':
+    application_train = pd.read_csv('../data/application_train.csv')
+    application_train_description = get_table_description(filename='../data/HomeCredit_columns_description.csv',
+                                                          table_name='application_{train|test}.csv')
 
-print(process_data.column_types)
+    process_data = BinaryClassEDA(data=application_train,
+                                  table_description=application_train_description,
+                                  target_column='TARGET',
+                                  id_column='SK_ID_CURR')
+
+    process_data.plot_categorical_dist_by_target('Binary')
