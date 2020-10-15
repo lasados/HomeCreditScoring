@@ -199,18 +199,30 @@ class BinaryClassEDA:
 
         elif old_dtype is None:
             assert change_columns is not None
-            column_types[new_dtype].extend(change_columns)
+            assert type(change_columns) == list
+
             if on_delete:
                 for key in column_types:
                     column_types[key] = [c for c in column_types[key] if c not in change_columns]
+
+            # Add columns after deletion
+            column_types[new_dtype].extend(change_columns)
         else:
             raise AttributeError('Set old_dtype or columns')
 
         self.column_types = column_types
 
+    def create_dtype_group(self, group_name: str):
+        """
+        Creates new group in columns_type.
 
-    def get_dtype_info(self,
-                       display_type: str):
+        Parameters:
+        -----------
+        group_name : str, name of new group.
+        """
+        self.column_types[group_name] = []
+
+    def get_dtype_info(self, display_type: str):
         """
         Show information of particular data type.
         Format of display - Data Type, Column Name, Description(Optional), Distribution.
@@ -242,7 +254,7 @@ class BinaryClassEDA:
                   "\n==========\n", col_distribution)
 
     def plot_categorical_dist_by_target(self,
-                                        plot_type=None,
+                                        plot_dtype=None,
                                         plot_columns=None,
                                         positive_name='default',
                                         negative_name='good'):
@@ -252,12 +264,12 @@ class BinaryClassEDA:
 
         Parameters:
         ----------
-        plot_type : str, default=None.
+        plot_dtype : str, default=None.
             Key from {'Continuous', 'Binary', 'Nominal', 'Unknown'}.
             If None -> plot_columns will be used.
 
         plot_columns : list of strings, default=None.
-            Which columns to plot. If None -> plot_type will be used.
+            Which columns to plot. If None -> plot_dtype will be used.
 
         positive_name : str, default='default'
             Name of group with positive target.
@@ -265,20 +277,18 @@ class BinaryClassEDA:
         negative_name : str, default='good'
             Name of group with positive target.
         """
-        assert not ((plot_type is None) and (plot_columns is None)), \
-            'At least one of the parameters must be set'
-
-        assert not ((plot_type is not None) and (plot_columns is not None)), \
-            'Only one of parameters must be set'
-
         data = self.data
         column_types = self.column_types
         target_column = self.target_column
 
-        if plot_type is None:
+        if plot_dtype is None:
+            assert plot_columns is not None, 'At least one of the parameters must be set'
             assert type(plot_columns) == list, 'plot_columns must be list of strings'
         elif plot_columns is None:
-            plot_columns = column_types[plot_type]
+            assert plot_dtype is not None, 'At least one of the parameters must be set'
+            plot_columns = column_types[plot_dtype]
+        else:
+            raise AssertionError('Only one of parameters must be set')
 
         positive_mask = data[target_column] == 1
         negative_mask = data[target_column] == 0
@@ -290,10 +300,14 @@ class BinaryClassEDA:
         # Plot chart for each column
         for i, column in enumerate(plot_columns):
 
-            # Make labels string
+            # Make numeric values string
             if data[column].dtype != object:
                 data[column] = data[column].astype('str')
 
+            # Make nan values string
+            data[column] = data[column].fillna('NaN')
+
+            # Find classes
             positive_cls = data[positive_mask][column]
             negative_cls = data[negative_mask][column]
 
