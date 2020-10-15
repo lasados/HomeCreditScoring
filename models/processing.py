@@ -132,7 +132,7 @@ class BinaryClassEDA:
 
         for column in all_columns:
             col_dtype = data.dtypes[column]
-            n_unique = len(data[column].unique())
+            n_unique = pd.notna(data[column].unique()).sum()
 
             if col_dtype == 'datetime64':
                 continue
@@ -161,6 +161,54 @@ class BinaryClassEDA:
         self.column_types = column_types
         return column_types
 
+    def count_column_dtypes(self):
+        """
+        Returns number of columns for each dtype in attribute column_types.
+        """
+        count_dict = {key: len(value) for key, value in self.column_types.items()}
+        count_df = pd.DataFrame(count_dict, index=['N columns'])
+        return count_df
+
+    def change_dtype_group(self,
+                           new_dtype: str,
+                           old_dtype=None,
+                           change_columns=None,
+                           on_delete=True):
+        """
+        Changes dtype of columns.
+
+        Parameters:
+        ----------
+        new_dtype : str, new type of columns.
+        One of 'Continuous', 'Binary', 'Nominal', 'Unknown'.
+
+        old_dtype : str, type of data to change.
+
+        columns : list of strings. columns to change.
+
+        Note:
+        ----
+        Only one of params (old_dtype, columns) should be set.
+        """
+        column_types = self.column_types
+        if change_columns is None:
+            assert old_dtype is not None
+            column_types[new_dtype].extend(column_types[old_dtype])
+            if on_delete:
+                column_types[old_dtype] = []
+
+        elif old_dtype is None:
+            assert change_columns is not None
+            column_types[new_dtype].extend(change_columns)
+            if on_delete:
+                for key in column_types:
+                    column_types[key] = [c for c in column_types[key] if c not in change_columns]
+        else:
+            raise AttributeError('Set old_dtype or columns')
+
+        self.column_types = column_types
+
+
     def get_dtype_info(self,
                        display_type: str):
         """
@@ -182,7 +230,7 @@ class BinaryClassEDA:
         display_columns = column_types[display_type]
         print(display_type, ' Data')
         for column in display_columns:
-            col_distribution = data[column].value_counts(normalize=True)
+            col_distribution = data[column].value_counts(normalize=True, dropna=False)
 
             if table_description is not None:
                 col_description = table_description[column].values[0]
@@ -191,8 +239,7 @@ class BinaryClassEDA:
 
             print("\n==========\n",
                   column, ' - ', col_description,
-                  "\n==========",
-                  col_distribution)
+                  "\n==========\n", col_distribution)
 
     def plot_categorical_dist_by_target(self,
                                         plot_type=None,
@@ -250,9 +297,9 @@ class BinaryClassEDA:
             positive_cls = data[positive_mask][column]
             negative_cls = data[negative_mask][column]
 
-            positive_dist = positive_cls.value_counts(normalize=True)
-            negative_dist = negative_cls.value_counts(normalize=True)
-            full_dist = data[column].value_counts(normalize=True)
+            positive_dist = positive_cls.value_counts(normalize=True, dropna=False)
+            negative_dist = negative_cls.value_counts(normalize=True, dropna=False)
+            full_dist = data[column].value_counts(normalize=True, dropna=False)
 
             # Labels of bins
             all_labels = full_dist.index
